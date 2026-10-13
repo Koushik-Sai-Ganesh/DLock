@@ -234,6 +234,84 @@ int find_resource(char *name)
 }
 
 
+
+/* Remove disconnected clients from queues and release their locks.
+   Call this while the client socket is still open. */
+void cleanup_disconnected_client(int socket_fd, int client_id)
+{
+    pthread_mutex_lock(&lock_mutex);
+
+    /* Remove this client from every waiting queue, preserving FIFO order. */
+    for (int i = 0; i < 4; i++) {
+        WaitingQueue *q = &resource_queues[i];
+        WaitingClient kept[MAX_QUEUE];
+        int kept_count = 0;
+
+        for (int j = 0; j < q->count; j++) {
+            int pos = (q->front + j) % MAX_QUEUE;
+            WaitingClient w = q->clients[pos];
+
+            if (w.client_id != client_id || w.socket_fd != socket_fd) {
+                kept[kept_count++] = w;
+            }
+        }
+
+        for (int j = 0; j < kept_count; j++) {
+            q->clients[j] = kept[j];
+        }
+
+        q->front = 0;
+        q->count = kept_count;
+        q->rear = kept_count % MAX_QUEUE;
+    }
+
+    /* Release each resource owned by this client. */
+    for (int i = 0; i < 4; i++) {
+        if (!lock_table[i].locked || lock_table[i].owner != client_id) {
+            continue;
+        }
+
+        int next_socket;
+        int next_id;
+        int transferred = 0;
+
+        while (dequeue(i, &next_socket, &next_id)) {
+            char message[BUFFER_SIZE];
+
+            snprintf(message, sizeof(message),
+                     "SUCCESS: %s is now locked by Client %d\n",
+                     lock_table[i].name, next_id);
+
+            /* MSG_NOSIGNAL prevents a dead peer from terminating the server. */
+            ssize_t sent = send(next_socket, message, strlen(message),
+                                MSG_NOSIGNAL);
+
+            if (sent >= 0) {
+                lock_table[i].locked = 1;
+                lock_table[i].owner = next_id;
+
+                printf("DISCONNECT CLEANUP: %s transferred to Client %d\n",
+                       lock_table[i].name, next_id);
+                transferred = 1;
+                break;
+            }
+
+            /* A failed send means this waiter cannot receive the lock.
+               Try the next waiter in FIFO order. */
+        }
+
+        if (!transferred) {
+            lock_table[i].locked = 0;
+            lock_table[i].owner = -1;
+
+            printf("DISCONNECT CLEANUP: %s is now FREE\n",
+                   lock_table[i].name);
+        }
+    }
+
+    pthread_mutex_unlock(&lock_mutex);
+}
+
 /* ============================================================
    HANDLE CLIENT
    ============================================================ */
@@ -593,9 +671,10 @@ void *handle_client(void *arg)
     }
 
 
-    printf("Client %d disconnected.\n",
+    printf("Client %d disconnected. Cleaning up locks and queues...\n",
            client_id);
 
+    cleanup_disconnected_client(client_socket, client_id);
 
     close(client_socket);
 

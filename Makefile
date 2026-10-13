@@ -1,24 +1,22 @@
 CC = gcc
-
 CFLAGS = -Wall -Wextra -pthread
-
 INCLUDE = -Iinclude
 
-SERVER = dlock_server
+all: dlock_server dlock_client file_demo sync_demo
 
-CLIENT = dlock_client
+dlock_server: src/server.c include/dlock.h
+	$(CC) $(CFLAGS) $(INCLUDE) src/server.c -o dlock_server
 
+dlock_client: src/client.c include/dlock.h
+	$(CC) $(CFLAGS) $(INCLUDE) src/client.c -o dlock_client
 
-all: $(SERVER) $(CLIENT)
+file_demo: src/file_demo.c
+	$(CC) -Wall -Wextra src/file_demo.c -o file_demo
 
-
-$(SERVER): src/server.c
-	$(CC) $(CFLAGS) $(INCLUDE) src/server.c -o $(SERVER)
-
-
-$(CLIENT): src/client.c
-	$(CC) $(CFLAGS) $(INCLUDE) src/client.c -o $(CLIENT)
-
+sync_demo: src/sync_demo.c
+	$(CC) $(CFLAGS) src/sync_demo.c -o sync_demo
 
 clean:
-	rm -f $(SERVER) $(CLIENT)
+	rm -f dlock_server dlock_client file_demo sync_demo
+
+.PHONY: all clean

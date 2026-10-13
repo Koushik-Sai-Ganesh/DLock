@@ -1,0 +1,15 @@
+# Compiled executables
+dlock_server
+dlock_client
+file_demo
+sync_demo
+
+# Generated demo output
+dlock_demo.txt
+
+# Local backup files
+Makefile_v1
+include/dlock_v1.h
+src/*_backup.c
+src/*_before_disconnect_fix.c
+src/*_v1.c
